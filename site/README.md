@@ -17,7 +17,7 @@ site/
     units/                the unit finder (index.html + app.js, read-only, no storage)
     assets/, og.jpg,      generated locally by tools/build_assets.py; not in git
     favicon.ico
-  src/worker.js           runs only for /units*: proxies /units/data.json from your game server
+  src/worker.js           runs only for /units/data.json: proxies it from your game server
   tools/build_assets.py   builds public/assets, og.jpg and the favicon from your copy of the game files
   wrangler.jsonc          Worker "bf-site": static assets on example.com
   www-redirect/           Worker "bf-site-www": 301 www.example.com -> example.com
@@ -65,7 +65,8 @@ HTTPS client build does) presents a certificate browsers do not trust.
 
 Note that the `unitFinder.php` endpoint is not part of the server source in this repository; without
 it the page shows "The game server did not answer." Set `UNIT_FINDER` in `src/worker.js` to your
-endpoint, and the CDN host in `UNITS_CSP` and in `public/units/app.js` (`ICON`) to your CDN.
+endpoint, and the CDN host in the `/units/*` Content-Security-Policy in `public/_headers` and in
+`public/units/app.js` (`ICON`) to your CDN.
 
 ## Configure and deploy (Cloudflare Workers)
 
@@ -88,7 +89,10 @@ Unknown paths fall back to the landing page (`not_found_handling: single-page-ap
 `public/_headers` sends a strict Content-Security-Policy, `X-Frame-Options: DENY`,
 `nosniff`, a restrictive `Permissions-Policy`, and `Cache-Control: no-transform` on everything. The
 latter stops Cloudflare from rewriting responses, which includes injecting the Web Analytics beacon
-into the HTML, so the page stays tracker-free. The unit finder gets its own CSP from the Worker.
+into the HTML, so the page stays tracker-free. The unit finder gets its own CSP from a `/units/*`
+rule in the same file, which detaches the site-wide one (`! Content-Security-Policy`), so its page
+and script are served as static assets too: only `/units/data.json` runs the Worker, and Worker
+requests are billed while static asset requests are free.
 
 ## Related documents
 

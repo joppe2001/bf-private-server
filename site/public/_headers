@@ -19,3 +19,10 @@
 
 /og.jpg
   Cache-Control: public, max-age=86400
+
+# The unit finder: the site CSP plus what it needs (its own script, its data and CDN unit
+# icons). Detach the site-wide policy first: two CSP headers would both be enforced.
+/units/*
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self' data: https://cdn.example.com; style-src 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Cache-Control: max-age=0, must-revalidate
