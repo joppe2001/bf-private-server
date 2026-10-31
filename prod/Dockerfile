@@ -52,6 +52,10 @@ COPY server/ /src/
 # pch_defines,time_macros and -fpch-preprocess, and module scanning (unused)
 # would make every compile uncacheable. The packet generator builds inside
 # /src each time; only its crates' downloads (the cargo registry) are cached.
+# x86-64-v3 (AVX2, BMI2, FMA; every EPYC since Zen 1): the image only runs on
+# the production host, so our code and glaze may use AVX2 (the reply's JSON
+# envelope is written ~2x faster). Only here: the Windows release players run
+# keeps the default baseline. The vcpkg libraries are built without it.
 ENV CCACHE_DIR=/root/.cache/ccache CCACHE_MAXSIZE=2G CCACHE_SLOPPINESS=pch_defines,time_macros
 RUN --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/opt/cargo/registry \
@@ -65,7 +69,8 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
         -DGIMU_ENABLE_DEBUG_CLI=OFF \
         -DCMAKE_C_COMPILER_LAUNCHER=ccache \
         -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-        -DCMAKE_CXX_FLAGS=-fpch-preprocess \
+        -DCMAKE_C_FLAGS=-march=x86-64-v3 \
+        -DCMAKE_CXX_FLAGS="-fpch-preprocess -march=x86-64-v3" \
         -DCMAKE_CXX_SCAN_FOR_MODULES=OFF \
     && ccache --zero-stats \
     && cmake --build /tmp/build --parallel ${JOBS} \
