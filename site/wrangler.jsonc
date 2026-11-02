@@ -1,4 +1,4 @@
-// example.com: static assets; src/worker.js runs only for /units (the unit finder's data proxy).
+// example.com: static assets; src/worker.js runs only for /units/data.json (the unit finder's data proxy).
 // Deploy: ../cdn-worker/node_modules/.bin/wrangler deploy --config wrangler.jsonc   (see README.md)
 {
   "name": "bf-site",
@@ -7,7 +7,7 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/units", "/units/*"],
+    "run_worker_first": ["/units/data.json"],
     // any unknown path shows the promo page instead of an empty 404
     "not_found_handling": "single-page-application"
   },

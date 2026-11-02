@@ -21,6 +21,11 @@ env:
   VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
   VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite
   VCPKG_FORCE_SYSTEM_BINARIES: "1"
+  # Compiler cache: a push that touches few sources recompiles only those.
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: 1G
+  # gimuserver uses a precompiled header; without these ccache skips every unit that includes it.
+  CCACHE_SLOPPINESS: pch_defines,time_macros
 
 jobs:
   build:
@@ -33,10 +38,11 @@ jobs:
           persist-credentials: false
 
       - name: Install the toolchain
+        id: toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            g++-14 gcc-14 ninja-build pkg-config zip unzip \
+            g++-14 gcc-14 ninja-build ccache pkg-config zip unzip \
             autoconf automake autoconf-archive libtool bison flex linux-libc-dev
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
@@ -44,6 +50,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           rustup update stable
           rustup default stable
+          echo "rustc=$(rustc -V | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
 
       - name: Restore the vcpkg binary cache
         uses: actions/cache@v4
@@ -51,6 +58,28 @@ jobs:
           path: .vcpkg-bincache
           key: vcpkg-linux-release-${{ env.VCPKG_COMMIT }}-${{ hashFiles('server/vcpkg.json', 'server/vcpkg-configuration.json') }}
           restore-keys: vcpkg-linux-release-${{ env.VCPKG_COMMIT }}-
+
+      # Restored on every run from the latest entry; ccache itself decides by content
+      # which objects are still valid. Saved (below) only on pushes to main, so pull
+      # requests cannot evict main's entry from the repository's 10 GB cache.
+      - name: Restore the compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-linux-release-${{ github.sha }}
+          restore-keys: ccache-linux-release-
+
+      # The Rust packet generator (cargo run --release at build time), keyed on its sources.
+      # Its dependencies stay compiled; cargo still rebuilds the generator crates themselves,
+      # because a fresh checkout gives their sources new mtimes.
+      - name: Restore the packet generator build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            server/packet-generator/target
+          key: pkgen-${{ steps.toolchain.outputs.rustc }}-${{ hashFiles('server/packet-generator/**/Cargo.lock', 'server/packet-generator/**/Cargo.toml', 'server/packet-generator/**/*.rs') }}
 
       - name: Bootstrap vcpkg
         run: |
@@ -63,6 +92,7 @@ jobs:
         working-directory: server
         run: python3 scripts/audit_handlers.py
 
+      # No C++20 modules here; module scanning adds flags that make every compile uncacheable for ccache.
       - name: Configure
         working-directory: server
         run: |
@@ -72,12 +102,26 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-linux-release \
             -DGIMUSRV_FRONTEND=STANDALONE \
-            -DGIMU_ENABLE_DEBUG_CLI=OFF
+            -DGIMU_ENABLE_DEBUG_CLI=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_FLAGS=-fpch-preprocess \
+            -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
 
       - name: Build
         working-directory: server
         # Three jobs: heavy template units need several GB each on a 16 GB runner.
-        run: cmake --build out/build/ci-linux --parallel 3
+        run: |
+          ccache --zero-stats
+          cmake --build out/build/ci-linux --parallel 3
+          ccache --show-stats --verbose
+
+      - name: Save the compiler cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-linux-release-${{ github.sha }}
 
       - name: Check the binary
         working-directory: server

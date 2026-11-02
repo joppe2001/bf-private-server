@@ -1,12 +1,10 @@
-// example.com: static assets, plus /units/data.json proxied from the game server.
+// example.com: /units/data.json proxied from the game server. Everything else, including the
+// unit finder page and its headers (public/_headers), is served as static assets without
+// running this Worker (wrangler.jsonc run_worker_first).
 // The API's certificate comes from the game's own root CA, which browsers do not trust,
 // so the page cannot fetch it directly; this Worker fetches it and caches it 5 minutes.
 const UNIT_FINDER = 'http://api.example.com/bf/gme/unitFinder.php';
 const DATA_TTL = 300;
-
-// The site CSP plus what the unit finder needs: its own script, its data and CDN unit icons.
-const UNITS_CSP = "default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self' data: https://cdn.example.com; "
-  + "style-src 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 function json(status, body) {
   return new Response(JSON.stringify(body), {
@@ -50,15 +48,6 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/units/data.json')
       return unitData(request, ctx);
-    const res = await env.ASSETS.fetch(request);
-    if (!url.pathname.startsWith('/units'))
-      return res;
-    const out = new Response(res.body, res);
-    out.headers.set('Content-Security-Policy', UNITS_CSP);
-    out.headers.set('X-Content-Type-Options', 'nosniff');
-    out.headers.set('X-Frame-Options', 'DENY');
-    out.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-    out.headers.set('Cache-Control', 'max-age=0, must-revalidate');
-    return out;
+    return env.ASSETS.fetch(request);
   },
 };
