@@ -31,7 +31,7 @@ jobs:
         # c-cpp is not analyzed: it needs a full vcpkg + Rust build of server/.
         language: [python, javascript-typescript]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Initialize CodeQL
