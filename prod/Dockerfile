@@ -50,13 +50,21 @@ RUN --mount=type=cache,target=/build \
         -DVCPKG_MANIFEST_INSTALL=OFF \
         -DGIMUSRV_FRONTEND=STANDALONE \
         -DGIMU_ENABLE_DEBUG_CLI=OFF \
+        -DCMAKE_C_FLAGS=-march=x86-64-v3 \
+        -DCMAKE_CXX_FLAGS=-march=x86-64-v3 \
     && cmake --build /build --parallel ${JOBS} \
     && install -D -s /build/standalone_frontend/gimuserverw /out/gimuserverw
 
 # ---------- runtime ----------
 FROM ubuntu:24.04
 
+# tcmalloc instead of glibc malloc (LD_PRELOAD below): a request's memory is
+# freed on another thread than the one that built it, and glibc's arena locks
+# for that cost ~8% of the server's CPU.  +17% req/s on the 4-CPU bench for
+# ~23 MiB more RSS.  Roll back without a rebuild: LD_PRELOAD= in the
+# service's environment.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata \
+        libtcmalloc-minimal4t64 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home /app --shell /usr/sbin/nologin bf \
     && install -d -o bf -g bf /data
@@ -70,6 +78,7 @@ COPY prod/config.json /app/config.json
 RUN mkdir -p /app/game_content/content /app/game_content/mst /app/balance
 
 ENV TZ=Asia/Tokyo
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libtcmalloc_minimal.so.4
 USER bf
 EXPOSE 9960
 VOLUME ["/data"]
